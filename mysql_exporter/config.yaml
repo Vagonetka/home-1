@@ -1,0 +1,10 @@
+log.level: info
+web.listen-address: ":9104"
+web.telemetry-path: "/metrics"
+collect.global_status: true
+collect.global_variables: true
+collect.slave_status: true
+collect.slave_hosts: true
+collect.auto_increment.columns: true
+collect.binlog_size: true
+collect.engine_innodb_status: true

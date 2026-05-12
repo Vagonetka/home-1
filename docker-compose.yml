@@ -1,0 +1,165 @@
+version: '3.8'
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass123
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: wppass123
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - monitoring_network
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 5
+
+
+  wordpress:
+    image: wordpress:php8.2-fpm
+    container_name: wordpress
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: wppass123
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./php/status.conf:/usr/local/etc/php-fpm.d/status.conf
+    networks:
+      - monitoring_network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - monitoring_network
+    depends_on:
+      - wordpress
+
+  
+
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: node_exporter
+    restart: unless-stopped
+    command:
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker|host)($$|/)'
+      - '--collector.netclass.ignored-devices=^(veth.*|docker.*)$'
+      - '--collector.netdev.device-exclude=^(veth.*|docker.*)$'
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring_network
+      
+
+  mysql_exporter:
+    image: prom/mysqld-exporter:v0.14.0
+    container_name: mysql_exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "exporter:exporterpass@(mysql:3306)/"
+    networks:
+      - monitoring_network
+    ports:
+      - "9104:9104"
+
+
+  nginx_exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx_exporter
+    restart: unless-stopped
+    command:
+      - '-nginx.scrape-uri=http://nginx/nginx_status'
+    networks:
+      - monitoring_network
+    depends_on:
+      - nginx
+    ports:
+      - "9113:9113"
+
+
+  php_fpm_exporter:
+    image: hipages/php-fpm_exporter:latest
+    container_name: php_fpm_exporter
+    restart: unless-stopped
+    environment:
+      PHP_FPM_SCRAPE_URI: "tcp://wordpress:9000/status?full"
+    networks:
+      - monitoring_network
+    depends_on:
+      - wordpress
+    ports:
+      - "9253:9253"
+
+
+  blackbox_exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox_exporter
+    restart: unless-stopped
+    volumes:
+      - ./blackbox/config.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      - monitoring_network
+    ports:
+      - "9115:9115"
+
+  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./GAP-1/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./GAP-1/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring_network
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./GAP-1/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - monitoring_network
+
+networks:
+  monitoring_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  wordpress_data:
+  prometheus_data:
+  alertmanager_data:
