@@ -22,4 +22,5 @@
    - `GAP-1/alertmanager.yml` - настройки Alertmanager
 
 3 - запустил систему командой `docker compose up -d`
+
 4 - проверил работу сервисов 
